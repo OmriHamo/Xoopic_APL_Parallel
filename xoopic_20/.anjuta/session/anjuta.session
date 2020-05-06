@@ -1,0 +1,36 @@
+[Anjuta]
+Maximized=1
+Geometry=1855x977+65+24
+
+[File Loader]
+Files=../../advisor/gridg.cpp#405%%%../../advisor/gridg.h#36%%%../../advisor/rules.h#101%%%../../advisor/spatialg.cpp#318%%%../../physics/grid.cpp#321%%%../../physics/fields.cpp#931%%%../../physics/ptclgpes.cpp#144%%%../../physics/grid.h#147%%%../../physics/ovector.h#63%%%../../physics/dadi.cpp#278%%%../../physics/cursrc.cpp#113%%%../../physics/fields.h#1%%%../../physics/beamemit.cpp#227%%%../../physics/load.cpp#226
+
+[Document Manager]
+bookmarks=<?xml version="1.0" encoding="UTF-8"?>\n<bookmarks/>\n
+
+[Search Box]
+Case Sensitive=1
+Highlight Match=1
+
+[Execution]
+Program arguments=-i input/4e7_100V_B05_aligned_plume/try_Dregion_Er0.inp%%%-i input/Validate_FieldSolver_moving_rz/Validate_FieldSolver_moving_rz.inp
+Program uri=../../xg/xoopic
+Run in terminal=1
+Working directories=../../.
+
+[Project Manager]
+Shortcut=xoopic_20//otools//libotools.a%%%xoopic_20//physics//libphysics.a%%%xoopic_20//advisor//libadvisor.a%%%xoopic_20//xg//libxg.a%%%xoopic_20//xg//xoopic
+Expand=xoopic_20
+
+[Build]
+Configuration list=1:Default:%%%1:Debug:Debug%%%1:Profiling:Profiling%%%1:Optimized:Optimized
+Selected Configuration=Default
+BuildArgs/Default=--enable-maintainer-mode
+BuildArgs/Debug=--enable-maintainer-mode 'CFLAGS=-g -O0' 'CXXFLAGS=-g -O0' 'JFLAGS=-g -O0' 'FFLAGS=-g -O0'
+BuildArgs/Profiling=--enable-maintainer-mode 'CFLAGS=-g -pg' 'CXXFLAGS=-g -pg' 'JFLAGS=-g -pg' 'FFLAGS=-g -pg'
+BuildArgs/Optimized=--enable-maintainer-mode 'CFLAGS=-O2' 'CXXFLAGS=-O2' 'JFLAGS=-O2' 'FFLAGS=-O2'
+
+[Debugger]
+Watch=B_mat[0][0].e1()%%%B1_vec[0]%%% J_B%%% K_B%%%B1_vec[ii]%%%B2_vec[ii]%%%B3_vec[ii]%%%x2_vec_long[ii]%%%j_B%%%k_B%%%ii%%%x1_const_old%%%x1_vec_long[501]%%%B_mat[1][1].e1()%%%x2_vec_long[501]%%%X_MKS.e1()%%%X_MKS.e2()%%%x_grid_vec.e1()%%%x_grid_vec.e2()%%%w1%%%w2%%% j%%% J%%% k%%%x_grid_vec.e1()%%%x_grid_vec.e2()%%%x2+1e-18%%%x2_interp_vec[0]%%%x2+tol%%% k + (x2 - xlo)/(xhi - xlo)%%% (x2 - xlo)/(xhi - xlo)
+Breakpoint=1:../../physics/fields.cpp:1055:0:
+Stop at beginning=2

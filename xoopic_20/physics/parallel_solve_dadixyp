@@ -1,0 +1,1272 @@
+
+original solve ver:
+
+
+
+
+
+
+int DadixyPer::solve(Scalar **u_in, Scalar **s, int itermax,Scalar tol_test)
+{
+	// u_in is del_phi to be calculated 
+  register int i, j;
+  int iter, ndiscard;
+  static Scalar del_t=0.0; // original time step for dadi
+  Scalar del_td=0, tptop=0, tpbot=0, ratio=0; // del_td - double time step for DADI
+  Scalar rnorm=0, rsum=0, res=0, errchk=0, dxdxutrm=0, dydyutrm=0; // rnorm - normalized residual(?)
+
+  rnorm=rsum=0.0;
+  for(i=0; i< ng1; i++)
+    for(j=0; j< ng2; j++) {
+		
+		/* Residual normalization.  */
+		// dirichlet conditions don't add to rnorm
+		rnorm +=( (b_x2geom[i][j]==0)? 0:s[i][j]*s[i][j]) ; // for dirichlet b(i,j)=1
+      
+  /*  copy u_in to u for working purposes.  */  
+		u[i][j]=(Scalar)u_in[i][j];
+
+		//calculate an initial estimate of the residual
+	/* Use the residual as the absolute error and if it is bigger 
+	   than the stored maximum absolute error, record new maximum 
+	   absolute error and location.  */
+
+		if(i>0&&i<nc1) { // not on dirichlet boundary, but yes on periodic BC
+		  dxdxutrm=a_x1geom[i][j]*u_in[i-1][j] +b_x1geom[i][j]*u_in[i][j] +
+			 c_x1geom[i][j]*u_in[i+1][j];
+		  dydyutrm=a_x2geom[i][j]*u_in[i][((j>0)? (j-1):(nc2-1))] +b_x2geom[i][j]*u_in[i][j] +
+			 c_x2geom[i][j]*u_in[i][((j<nc2)? (j+1):(1))];
+		}
+		
+  		/* only include points which are not in structures. */
+		errchk = ((b_x2geom[i][j]==0)? 0:dxdxutrm +dydyutrm -s[i][j]);
+	
+		/* Residual sums. */
+		rsum += errchk*errchk;
+	 }
+
+  // If rnorm is zero, we must deal with it...
+  if (rnorm == 0.0) {
+
+	 // check dirichlet conditions
+	 for(i=0;i<ng1;i++) for(j=0;j<ng2;j++) {
+		rnorm += sqr(((i>0&&b_x2geom[i-1][j]!=0)?c_x1geom[i-1][j]*u[i][j]:0));
+		// check right
+		rnorm += sqr(((i<nc1&&b_x2geom[i+1][j]!=0)?a_x1geom[i+1][j]*u[i][j]:0));
+		// check up
+		rnorm += sqr(((j>0&&b_x2geom[i][j-1]!=0)?c_x2geom[i][j-1]*u[i][j]:0));
+		// check right
+		rnorm += sqr(((j<nc2&&b_x2geom[i][j+1]!=0)?c_x2geom[i][j+1]*u[i][j]:0));
+
+	 }
+
+	 if(rnorm == 0) { //still zero, we don't need to iterate - the trivial solution for Laplace with 0 BC
+		for(i=0;i<ng1;i++) for(j=0;j<ng2;j++) u_in[i][j]=0;
+		return 0;
+	 }
+  }
+  rnorm=sqrt(rnorm);
+  res = sqrt(rsum)/rnorm;
+#ifdef DADI_DEBUG
+  printf("dadi: res = %g\n",res);
+  printf("dadi: rnorm= %g\n", rnorm);
+#endif
+
+  if(res<tol_test) return 0;  // no need to iterate
+
+  /*************************************************/
+  if(del_t==0.0) del_t=del_t0; else del_t/=4;
+  del_td= 2.0*del_t;
+  ndiscard=0;
+
+  /********************/
+  /* Begin iteration. */
+  
+  for(iter=0; iter<itermax; iter++)
+  {
+    /*************************************************/
+    /* Copy u into the work array and storage array. */
+    
+    for(i=0; i< ng1; i++)
+      for(j=0; j< ng2; j++) uwork[i][j] = ustor[i][j] = u[i][j];
+    
+    /************************************/
+    /* Two advances of u via ADI at del_t. includes BC advance */
+	/* orig code:
+    adi(u, s, del_t); // u is both input & outpout
+    adi(u, s, del_t);
+    
+    ////////////////////////////////////
+    // One advance of uwork via ADI at 2*del_t
+
+    adi(uwork, s, del_td);
+	 end orig code*/
+
+	/* parallel code*/
+    adi_omp(u, s, del_t); // u is both input & outpout
+    adi_omp(u, s, del_t);
+
+    // One advance of uwork via ADI at 2*del_t.
+
+    adi_omp(uwork, s, del_td);
+
+	/*end parallel code*/
+
+
+
+	  
+    /*******************************************************/
+    /* Calculate test parameter and normalized error.
+       For Dirichlet BCs, no need to worry about boundary
+       points since u,uwork, and ustor should be the same. */
+    
+    tptop= tpbot= rsum = 0.0;
+
+    for(i=1; i< nc1; i++) // not including boundary
+      for(j=1; j< nc2; j++)
+      {
+		  /* Test paramter sums. */
+		  tptop += (u[i][j]-uwork[i][j])*(u[i][j]-uwork[i][j]);
+		  tpbot += (u[i][j]-ustor[i][j])*(u[i][j]-ustor[i][j]);
+	
+	/* Residual terms. */
+
+		  dxdxutrm=a_x1geom[i][j]*u[i-1][j] +b_x1geom[i][j]*u[i][j] +c_x1geom[i][j]*u[i+1][j];
+		  dydyutrm=a_x2geom[i][j]*u[i][j-1] +b_x2geom[i][j]*u[i][j] +c_x2geom[i][j]*u[i][j+1];
+
+	/* Use the residual as the absolute error and if it is bigger 
+	   than the stored maximum absolute error, record new maximum 
+	   absolute error and location.  */
+		  /* only include points which are not in structures. */
+		  errchk = ((b_x2geom[i][j]==0)? 0:dxdxutrm +dydyutrm -s[i][j]);
+	
+	/* Residual sums. */
+		  rsum += errchk*errchk;
+      }
+
+    /* Calculate normalized residual. */
+    res = sqrt(rsum)/rnorm;
+#ifdef DADI_DEBUG
+    printf("dadi: iter= %d, res = %lg del_t=%le\n", iter, res,del_t);
+#endif // DADI_DEBUG
+    /* If the residual is less than the tolerance, SUCCESS! */
+    if ((res < tol_test) && (iter))
+		{
+#ifdef DADI_DEBUG
+		  printf("dadi: iter=%d\n", iter);
+#endif// DADI_DEBUG
+		  for(i=0;i<ng1;i++)
+			 for(j=0;j<ng2;j++)
+				u_in[i][j]=(Scalar)u[i][j]; 
+/* cout<<"------u_in-------\n";
+  for(i=0;i<ng1;i++){
+         for(j=0;j<ng2;j++){
+                u_in[i][j]=(Scalar)u[i][j];
+                cout<<u_in[i][j]<<" ";
+          }
+                cout<<"\n";
+}
+*/
+		  return(0);
+		}
+
+    /* Determine ratio used to find the time step change.  If tpbot 
+       is zero but tptop is finite, consider this a case of a large 
+       ratio and act accordingly.  DWH does about the same thing 
+       except he does NOT discard the solution if tpbot=0. */
+    
+    if (tpbot > 0.0) ratio=tptop/tpbot;
+    if (tpbot== 0.0) ratio=1.0;
+#ifndef NO_STEP_ADJUST    
+    /* Get next time step. */
+    if (ratio < 0.02) del_t *= 8.0;
+    if (ratio >=0.02 && ratio < 0.05) del_t *= 4.0;
+    if (ratio >=0.05 && ratio < 0.10) del_t *= 2.0;
+    if (ratio >=0.10 && ratio < 0.30) del_t *= 0.80;
+    if (ratio >=0.30 && ratio < 0.40) del_t *= 0.50;
+    if (ratio >=0.40 && ratio < 0.60) del_t *= 0.25; 
+	 for(i=0;i<ng1;i++)
+		for(j=0;j<ng2;j++)
+		  u_in[i][j]=(Scalar)u[i][j];
+#endif   
+    
+	 /* Ratio is too large. Discard solution and restart with smaller dt */
+    if (ratio >=0.60)
+    { 
+      ndiscard++;
+			iter--;
+#ifdef DADI_DEBUG
+	      printf("ndiscard= %d, iter=%d step=%lf\n", ndiscard, iter,del_t); 
+#endif //DADI_DEBUG
+      
+      /* Check if too many discards - if yes,  */
+      if (ndiscard > 20)
+      {
+		  for(i=0;i<ng1;i++)
+			 for(j=0;j<ng2;j++)
+				u_in[i][j]=(Scalar)u[i][j];
+		  del_t = del_t0;
+//		  if(solve(u_in,s,itermax,tol_test))
+		  printf("Poisson solve FAILURE: dadi: iter= %d, ndiscard>20\n", iter);
+		  return 1;
+      }	
+      /* Discard solution by replacing u with what we started with. */
+      for(i=0; i< ng1; i++)
+		  for(j=0; j< ng2; j++) u[i][j] = ustor[i][j]; // ustor=u_original
+      
+      /* Reduce del_t. */
+      del_t /= 8.0;
+		//del_t = del_t0;
+    }
+    del_td=2*del_t;
+  } // end itarative loop
+  /* Fail if used up the maximum iterations. */
+		
+  printf("Poisson solve FAILURE: dadi:  iter>= %d\n",itermax);
+
+  for(i=0;i<ng1;i++)
+	 for(j=0;j<ng2;j++)
+		u_in[i][j]=(Scalar)u[i][j];
+	
+  return(2);
+}
+
+
+
+
+
+
+
+
+
+// half parallel solve() ver::
+
+
+
+int DadixyPer::solve(Scalar **u_in, Scalar **s, int itermax,Scalar tol_test)
+{
+	// u_in is del_phi to be calculated 
+	register int i, j;
+	int iter, ndiscard,N_incr=0;
+	static Scalar del_t=0.0; // original time step for dadi
+	Scalar errchk=0, dxdxutrm=0, dydyutrm=0,rnorm=0, rsum=0,del_td=0 , res=0, tptop=0, tpbot=0, ratio=0; // del_td - double time step for DADI
+
+
+	rnorm=rsum=0.0;	
+
+
+#pragma omp parallel 
+	{
+
+	Scalar rnorm_local=0, rsum_local=0, errchk_local, dxdxutrm_local, dydyutrm_local; // rnorm - normalized residual(?)	
+	//int ID=omp_get_thread_num();
+	int ii,jj;
+	int  i_start=0;
+	// nc1 = J , nc2 = K
+	//thread_ID[ID]+=1; //thread_ID[3] 
+	//if (ID==0) 
+	//  num_threads_used=omp_get_num_threads();
+
+#pragma omp critical
+	{
+		for (ii=0; ii<N_incr ; ii++)
+			i_start++;
+
+		N_incr++;
+	}
+
+	Scalar **u_in_local, **b_x2geom_local, **s_local;
+
+	u_in_local = new Scalar* [ng1];
+	b_x2geom_local = new Scalar* [ng1];
+	s_local = new Scalar* [ng1];
+	
+	for(ii=0;ii<ng1;ii++) {
+		u_in_local[ii]=new Scalar[ng2];
+		//memset(u_in_local[ii],0,(ng2)*sizeof(Scalar));
+		b_x2geom_local[ii]=new Scalar[ng2];
+		s_local[ii] = new Scalar[ng2];
+		
+	}
+	
+
+	for (ii=0; ii<ng1; ii++)
+		for (jj=0; jj<ng2; jj++){
+			u_in_local[ii][jj] = u_in[ii][jj];
+			b_x2geom_local[ii][jj] = b_x2geom[ii][jj];	
+			s_local[ii][jj] = s[ii][jj];				
+
+		}
+	
+		for(ii=i_start; ii< ng1; ii=ii+N_threads)
+			for(jj=0; jj< ng2; jj++) {
+
+			/* Residual normalization.  */
+			// dirichlet conditions don't add to rnorm
+			rnorm_local +=( (b_x2geom_local[ii][jj]==0)? 0:s_local[ii][jj]*s_local[ii][jj]) ; // for dirichlet b(i,j)=1
+
+			/*  copy u_in to u for working purposes.  */
+			u[ii][jj]=(Scalar)u_in_local[ii][jj];
+
+			//calculate an initial estimate of the residual
+			/* Use the residual as the absolute error and if it is bigger 
+			 than the stored maximum absolute error, record new maximum 
+			 absolute error and location.  */
+
+			if(ii>0&&ii<nc1) { // not on dirichlet boundary, but yes on periodic BC
+				dxdxutrm_local=a_x1geom[ii][jj]*u_in_local[ii-1][jj] +b_x1geom[ii][jj]*u_in_local[ii][jj] +
+					c_x1geom[ii][jj]*u_in_local[ii+1][jj];
+				dydyutrm_local=a_x2geom[ii][jj]*u_in_local[ii][((jj>0)? (jj-1):(nc2-1))] +b_x2geom_local[ii][jj]*u_in_local[ii][jj] +
+					c_x2geom[ii][jj]*u_in_local[ii][((jj<nc2)? (jj+1):(1))];
+			}
+
+			/* only include points which are not in structures. */
+			errchk_local = ((b_x2geom_local[ii][jj]==0)? 0:dxdxutrm_local +dydyutrm_local -s_local[ii][jj]);
+
+			/* Residual sums. */
+			rsum_local += errchk_local*errchk_local;
+		}
+
+
+	#pragma omp critical
+	{
+		rsum+=rsum_local;
+		rnorm+=rnorm_local;
+	}
+
+
+	for (ii=0; ii<ng1; ii++){
+		delete[] u_in_local[ii];
+		delete[] b_x2geom_local[ii];
+		delete[] s_local[ii];	
+	}
+		
+	delete[] u_in_local;
+	delete[] b_x2geom_local;
+	delete[] s_local;	
+
+  } // end parallel
+
+
+// If rnorm is zero, we must deal with it...
+if (rnorm == 0.0) {
+
+	// check dirichlet conditions
+	for(i=0;i<ng1;i++) for(j=0;j<ng2;j++) {
+		rnorm += sqr(((i>0&&b_x2geom[i-1][j]!=0)?c_x1geom[i-1][j]*u[i][j]:0));
+		// check right
+		rnorm += sqr(((i<nc1&&b_x2geom[i+1][j]!=0)?a_x1geom[i+1][j]*u[i][j]:0));
+		// check up
+		rnorm += sqr(((j>0&&b_x2geom[i][j-1]!=0)?c_x2geom[i][j-1]*u[i][j]:0));
+		// check right
+		rnorm += sqr(((j<nc2&&b_x2geom[i][j+1]!=0)?c_x2geom[i][j+1]*u[i][j]:0));
+
+	}
+
+	if(rnorm == 0) { //still zero, we don't need to iterate - the trivial solution for Laplace with 0 BC
+		for(i=0;i<ng1;i++) for(j=0;j<ng2;j++) u_in[i][j]=0;
+		return 0;
+	}
+}
+rnorm=sqrt(rnorm);
+res = sqrt(rsum)/rnorm;
+#ifdef DADI_DEBUG
+printf("dadi: res = %g\n",res);
+printf("dadi: rnorm= %g\n", rnorm);
+#endif
+
+if(res<tol_test) return 0;  // no need to iterate
+
+/*************************************************/
+if(del_t==0.0) del_t=del_t0; else del_t/=4;
+del_td= 2.0*del_t;
+ndiscard=0;
+
+/********************/
+/* Begin iteration. */
+
+for(iter=0; iter<itermax; iter++)
+{
+	/*************************************************/
+	/* Copy u into the work array and storage array. */
+
+	for(i=0; i< ng1; i++)
+		for(j=0; j< ng2; j++) uwork[i][j] = ustor[i][j] = u[i][j];
+
+	/************************************/
+	/* Two advances of u via ADI at del_t. includes BC advance */
+	/* orig code:
+	 adi(u, s, del_t); // u is both input & outpout
+	 adi(u, s, del_t);
+
+	 ////////////////////////////////////
+	 // One advance of uwork via ADI at 2*del_t
+
+	 adi(uwork, s, del_td);
+	 end orig code*/
+
+	/* parallel code*/
+	adi_omp(u, s, del_t); // u is both input & outpout
+	adi_omp(u, s, del_t);
+
+	// One advance of uwork via ADI at 2*del_t.
+
+	adi_omp(uwork, s, del_td);
+
+	/*end parallel code*/
+
+
+
+
+	  
+    /*******************************************************/
+    /* Calculate test parameter and normalized error.
+       For Dirichlet BCs, no need to worry about boundary
+       points since u,uwork, and ustor should be the same. */
+    
+    tptop= tpbot= rsum = 0.0;
+
+    for(i=1; i< nc1; i++) // not including boundary
+      for(j=1; j< nc2; j++)
+      {
+		  /* Test paramter sums. */
+		  tptop += (u[i][j]-uwork[i][j])*(u[i][j]-uwork[i][j]);
+		  tpbot += (u[i][j]-ustor[i][j])*(u[i][j]-ustor[i][j]);
+	
+	/* Residual terms. */
+
+		  dxdxutrm=a_x1geom[i][j]*u[i-1][j] +b_x1geom[i][j]*u[i][j] +c_x1geom[i][j]*u[i+1][j];
+		  dydyutrm=a_x2geom[i][j]*u[i][j-1] +b_x2geom[i][j]*u[i][j] +c_x2geom[i][j]*u[i][j+1];
+
+	/* Use the residual as the absolute error and if it is bigger 
+	   than the stored maximum absolute error, record new maximum 
+	   absolute error and location.  */
+		  /* only include points which are not in structures. */
+		  errchk = ((b_x2geom[i][j]==0)? 0:dxdxutrm +dydyutrm -s[i][j]);
+	
+	/* Residual sums. */
+		  rsum += errchk*errchk;
+      }
+
+    /* Calculate normalized residual. */
+    res = sqrt(rsum)/rnorm;
+#ifdef DADI_DEBUG
+    printf("dadi: iter= %d, res = %lg del_t=%le\n", iter, res,del_t);
+#endif // DADI_DEBUG
+    /* If the residual is less than the tolerance, SUCCESS! */
+    if ((res < tol_test) && (iter))
+		{
+#ifdef DADI_DEBUG
+		  printf("dadi: iter=%d\n", iter);
+#endif// DADI_DEBUG
+		  for(i=0;i<ng1;i++)
+			 for(j=0;j<ng2;j++)
+				u_in[i][j]=(Scalar)u[i][j]; 
+/* cout<<"------u_in-------\n";
+  for(i=0;i<ng1;i++){
+         for(j=0;j<ng2;j++){
+                u_in[i][j]=(Scalar)u[i][j];
+                cout<<u_in[i][j]<<" ";
+          }
+                cout<<"\n";
+}
+*/
+		  return(0);
+		}
+
+    /* Determine ratio used to find the time step change.  If tpbot 
+       is zero but tptop is finite, consider this a case of a large 
+       ratio and act accordingly.  DWH does about the same thing 
+       except he does NOT discard the solution if tpbot=0. */
+    
+    if (tpbot > 0.0) ratio=tptop/tpbot;
+    if (tpbot== 0.0) ratio=1.0;
+#ifndef NO_STEP_ADJUST    
+    /* Get next time step. */
+    if (ratio < 0.02) del_t *= 8.0;
+    if (ratio >=0.02 && ratio < 0.05) del_t *= 4.0;
+    if (ratio >=0.05 && ratio < 0.10) del_t *= 2.0;
+    if (ratio >=0.10 && ratio < 0.30) del_t *= 0.80;
+    if (ratio >=0.30 && ratio < 0.40) del_t *= 0.50;
+    if (ratio >=0.40 && ratio < 0.60) del_t *= 0.25; 
+	 for(i=0;i<ng1;i++)
+		for(j=0;j<ng2;j++)
+		  u_in[i][j]=(Scalar)u[i][j];
+#endif   
+    
+	 /* Ratio is too large. Discard solution and restart with smaller dt */
+    if (ratio >=0.60)
+    { 
+      ndiscard++;
+			iter--;
+#ifdef DADI_DEBUG
+	      printf("ndiscard= %d, iter=%d step=%lf\n", ndiscard, iter,del_t); 
+#endif //DADI_DEBUG
+      
+      /* Check if too many discards - if yes,  */
+      if (ndiscard > 20)
+      {
+		  for(i=0;i<ng1;i++)
+			 for(j=0;j<ng2;j++)
+				u_in[i][j]=(Scalar)u[i][j];
+		  del_t = del_t0;
+//		  if(solve(u_in,s,itermax,tol_test))
+		  printf("Poisson solve FAILURE: dadi: iter= %d, ndiscard>20\n", iter);
+		  return 1;
+      }	
+      /* Discard solution by replacing u with what we started with. */
+      for(i=0; i< ng1; i++)
+		  for(j=0; j< ng2; j++) u[i][j] = ustor[i][j]; // ustor=u_original
+      
+      /* Reduce del_t. */
+      del_t /= 8.0;
+		//del_t = del_t0;
+    }
+    del_td=2*del_t;
+  } // end itarative loop
+  /* Fail if used up the maximum iterations. */
+		
+  printf("Poisson solve FAILURE: dadi:  iter>= %d\n",itermax);
+
+  for(i=0;i<ng1;i++)
+	 for(j=0;j<ng2;j++)
+		u_in[i][j]=(Scalar)u[i][j];
+	
+  return(2);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+//fully Parallel version of solve:
+
+int DadixyPer::solve(Scalar **u_in, Scalar **s, int itermax,Scalar tol_test)
+{
+
+
+	// u_in is del_phi to be calculated 
+	register int i, j;
+	int iter, ndiscard,N_incr=0;
+	static Scalar del_t=0.0; // original time step for dadi
+	Scalar rnorm=0, rsum=0,del_td=0 , res=0, tptop=0, tpbot=0, ratio=0; // del_td - double time step for DADI
+
+
+	rnorm=rsum=0.0;	
+
+
+#pragma omp parallel 
+	{
+
+	Scalar rnorm_local=0, rsum_local=0, errchk_local, dxdxutrm_local, dydyutrm_local; // rnorm - normalized residual(?)	
+	//int ID=omp_get_thread_num();
+	int ii,jj;
+	int  i_start=0;
+	// nc1 = J , nc2 = K
+	//thread_ID[ID]+=1; //thread_ID[3] 
+	//if (ID==0) 
+	//  num_threads_used=omp_get_num_threads();
+
+#pragma omp critical
+	{
+		for (ii=0; ii<N_incr ; ii++)
+			i_start++;
+
+		N_incr++;
+	}
+
+		for(ii=i_start; ii< ng1; ii=ii+N_threads)
+			for(jj=0; jj< ng2; jj++) {
+
+			/* Residual normalization.  */
+			// dirichlet conditions don't add to rnorm
+			rnorm_local +=( (b_x2geom[ii][jj]==0)? 0:s[ii][jj]*s[ii][jj]) ; // for dirichlet b(i,j)=1
+
+			/*  copy u_in to u for working purposes.  */
+			u[ii][jj]=(Scalar)u_in[ii][jj];
+
+			//calculate an initial estimate of the residual
+			/* Use the residual as the absolute error and if it is bigger 
+			 than the stored maximum absolute error, record new maximum 
+			 absolute error and location.  */
+
+			if(ii>0&&ii<nc1) { // not on dirichlet boundary, but yes on periodic BC
+				dxdxutrm_local=a_x1geom[ii][jj]*u_in[ii-1][jj] +b_x1geom[ii][jj]*u_in[ii][jj] +
+					c_x1geom[ii][jj]*u_in[ii+1][jj];
+				dydyutrm_local=a_x2geom[ii][jj]*u_in[ii][((jj>0)? (jj-1):(nc2-1))] +b_x2geom[ii][jj]*u_in[ii][jj] +
+					c_x2geom[ii][jj]*u_in[ii][((jj<nc2)? (jj+1):(1))];
+			}
+
+			/* only include points which are not in structures. */
+			errchk_local = ((b_x2geom[ii][jj]==0)? 0:dxdxutrm_local +dydyutrm_local -s[ii][jj]);
+
+			/* Residual sums. */
+			rsum_local += errchk_local*errchk_local;
+		}
+
+
+	#pragma omp critical
+	{
+		rsum+=rsum_local;
+		rnorm+=rnorm_local;
+	}
+
+
+  } // end parallel
+
+
+// If rnorm is zero, we must deal with it...
+if (rnorm == 0.0) {
+
+	// check dirichlet conditions
+	for(i=0;i<ng1;i++) for(j=0;j<ng2;j++) {
+		rnorm += sqr(((i>0&&b_x2geom[i-1][j]!=0)?c_x1geom[i-1][j]*u[i][j]:0));
+		// check right
+		rnorm += sqr(((i<nc1&&b_x2geom[i+1][j]!=0)?a_x1geom[i+1][j]*u[i][j]:0));
+		// check up
+		rnorm += sqr(((j>0&&b_x2geom[i][j-1]!=0)?c_x2geom[i][j-1]*u[i][j]:0));
+		// check right
+		rnorm += sqr(((j<nc2&&b_x2geom[i][j+1]!=0)?c_x2geom[i][j+1]*u[i][j]:0));
+
+	}
+
+	if(rnorm == 0) { //still zero, we don't need to iterate - the trivial solution for Laplace with 0 BC
+		for(i=0;i<ng1;i++) for(j=0;j<ng2;j++) u_in[i][j]=0;
+		return 0;
+	}
+}
+rnorm=sqrt(rnorm);
+res = sqrt(rsum)/rnorm;
+#ifdef DADI_DEBUG
+printf("dadi: res = %g\n",res);
+printf("dadi: rnorm= %g\n", rnorm);
+#endif
+
+if(res<tol_test) return 0;  // no need to iterate
+
+/*************************************************/
+if(del_t==0.0) del_t=del_t0; else del_t/=4;
+del_td= 2.0*del_t;
+ndiscard=0;
+
+/********************/
+/* Begin iteration. */
+
+for(iter=0; iter<itermax; iter++)
+{
+	/*************************************************/
+	/* Copy u into the work array and storage array. */
+
+	for(i=0; i< ng1; i++)
+		for(j=0; j< ng2; j++) uwork[i][j] = ustor[i][j] = u[i][j];
+
+	/************************************/
+	/* Two advances of u via ADI at del_t. includes BC advance */
+	/* orig code:
+	 adi(u, s, del_t); // u is both input & outpout
+	 adi(u, s, del_t);
+
+	 ////////////////////////////////////
+	 // One advance of uwork via ADI at 2*del_t
+
+	 adi(uwork, s, del_td);
+	 end orig code*/
+
+	/* parallel code*/
+	adi_omp(u, s, del_t); // u is both input & outpout
+	adi_omp(u, s, del_t);
+
+	// One advance of uwork via ADI at 2*del_t.
+
+	adi_omp(uwork, s, del_td);
+
+	/*end parallel code*/
+
+
+
+
+	/*******************************************************/
+	/* Calculate test parameter and normalized error.
+	 For Dirichlet BCs, no need to worry about boundary
+	 points since u,uwork, and ustor should be the same. */
+
+	tptop= tpbot= rsum = 0.0;
+	N_incr=0;
+
+#pragma omp parallel 
+	{
+
+	Scalar tptop_local=0,tpbot_local=0 , rsum_local=0, errchk_local, dxdxutrm_local, dydyutrm_local; // rnorm - normalized residual(?)	
+	//int ID=omp_get_thread_num();
+	int ii,jj;
+	int  i_start=1; // not includin boundary
+	// nc1 = J , nc2 = K
+	//thread_ID[ID]+=1; //thread_ID[3] 
+	//if (ID==0) 
+	//  num_threads_used=omp_get_num_threads();
+
+#pragma omp critical
+	{
+		for (ii=0; ii<N_incr ; ii++)
+			i_start++;
+
+		N_incr++;
+	}
+
+
+	for(ii=i_start; ii< nc1; ii=ii+N_threads) // not including boundary
+		for(jj=1; jj< nc2; jj++)
+	{
+			/* Test paramter sums. */
+			tptop_local += (u[ii][jj]-uwork[ii][jj])*(u[ii][jj]-uwork[ii][jj]);
+			tpbot_local += (u[ii][jj]-ustor[ii][jj])*(u[ii][jj]-ustor[ii][jj]);
+
+			/* Residual terms. */
+
+			dxdxutrm_local=a_x1geom[ii][jj]*u[ii-1][jj] +b_x1geom[ii][jj]*u[ii][jj] +c_x1geom[ii][jj]*u[ii+1][jj];
+			dydyutrm_local=a_x2geom[ii][jj]*u[ii][jj-1] +b_x2geom[ii][jj]*u[ii][jj] +c_x2geom[ii][jj]*u[ii][jj+1];
+
+			/* Use the residual as the absolute error and if it is bigger 
+			 than the stored maximum absolute error, record new maximum 
+			 absolute error and location.  */
+			/* only include points which are not in structures. */
+			errchk_local = ((b_x2geom[ii][jj]==0)? 0:dxdxutrm_local +dydyutrm_local -s[ii][jj]);
+
+			/* Residual sums. */
+			rsum_local += errchk_local*errchk_local;
+		}
+
+	#pragma omp critical
+	{
+		rsum+=rsum_local;
+		tptop+=tptop_local;
+		tpbot+=tpbot_local;
+	}
+
+		
+	}//end parallel
+
+	/* Calculate normalized residual. */
+	res = sqrt(rsum)/rnorm;
+#ifdef DADI_DEBUG
+	printf("dadi: iter= %d, res = %lg del_t=%le\n", iter, res,del_t);
+#endif // DADI_DEBUG
+		/* If the residual is less than the tolerance, SUCCESS! */
+		if ((res < tol_test) && (iter))
+	{
+#ifdef DADI_DEBUG
+			printf("dadi: iter=%d\n", iter);
+#endif// DADI_DEBUG
+				for(i=0;i<ng1;i++)
+				for(j=0;j<ng2;j++)
+				u_in[i][j]=(Scalar)u[i][j]; 
+			/* cout<<"------u_in-------\n";
+			 for(i=0;i<ng1;i++){
+				 for(j=0;j<ng2;j++){
+					 u_in[i][j]=(Scalar)u[i][j];
+					 cout<<u_in[i][j]<<" ";
+		}
+	cout<<"\n";
+		}
+	*/
+			return(0);
+		}
+
+	/* Determine ratio used to find the time step change.  If tpbot 
+	 is zero but tptop is finite, consider this a case of a large 
+	 ratio and act accordingly.  DWH does about the same thing 
+	 except he does NOT discard the solution if tpbot=0. */
+
+	if (tpbot > 0.0) ratio=tptop/tpbot;
+	if (tpbot== 0.0) ratio=1.0;
+#ifndef NO_STEP_ADJUST    
+	/* Get next time step. */
+	if (ratio < 0.02) del_t *= 8.0;
+	if (ratio >=0.02 && ratio < 0.05) del_t *= 4.0;
+	if (ratio >=0.05 && ratio < 0.10) del_t *= 2.0;
+	if (ratio >=0.10 && ratio < 0.30) del_t *= 0.80;
+	if (ratio >=0.30 && ratio < 0.40) del_t *= 0.50;
+	if (ratio >=0.40 && ratio < 0.60) del_t *= 0.25; 
+	for(i=0;i<ng1;i++)
+		for(j=0;j<ng2;j++)
+		u_in[i][j]=(Scalar)u[i][j];
+#endif   
+
+	/* Ratio is too large. Discard solution and restart with smaller dt */
+	if (ratio >=0.60)
+	{ 
+		ndiscard++;
+		iter--;
+#ifdef DADI_DEBUG
+		printf("ndiscard= %d, iter=%d step=%lf\n", ndiscard, iter,del_t); 
+#endif //DADI_DEBUG
+
+			/* Check if too many discards - if yes,  */
+			if (ndiscard > 20)
+		{
+				for(i=0;i<ng1;i++)
+					for(j=0;j<ng2;j++)
+					u_in[i][j]=(Scalar)u[i][j];
+				del_t = del_t0;
+				//		  if(solve(u_in,s,itermax,tol_test))
+				printf("Poisson solve FAILURE: dadi: iter= %d, ndiscard>20\n", iter);
+				return 1;
+			}	
+		/* Discard solution by replacing u with what we started with. */
+		for(i=0; i< ng1; i++)
+			for(j=0; j< ng2; j++) u[i][j] = ustor[i][j]; // ustor=u_original
+
+		/* Reduce del_t. */
+		del_t /= 8.0;
+		//del_t = del_t0;
+	}
+	del_td=2*del_t;
+} // end itarative loop
+/* Fail if used up the maximum iterations. */
+
+printf("Poisson solve FAILURE: dadi:  iter>= %d\n",itermax);
+
+for(i=0;i<ng1;i++)
+for(j=0;j<ng2;j++)
+u_in[i][j]=(Scalar)u[i][j];
+
+return(2);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+///// dadi omp smart ver:
+
+
+void DadixyPer::adi_omp(Scalar **uadi, Scalar **s, Scalar del_t)
+{
+	register int i, j;
+	Scalar dth;
+
+	dth = .5*del_t;
+
+	int N_threads_local = N_threads;
+	int N_incr=0; //number of times to increment pointer at parallelization start 		
+
+	int npt_x_sweep = (int)ng2 / N_threads_local ; // number of runs per thread		int n_extra_x_sweep = nc2 % N_threads_local; 
+	int n_extra_x_sweep = ng2 % N_threads_local; // how many threads do +1 iteration
+	int npt_y_sweep = (int)ng1 / N_threads_local ; // number of runs per thread		int n_extra_x_sweep = nc2 % N_threads_local; 
+	int n_extra_y_sweep = ng1 % N_threads_local; // how many threads do +1 iteration
+	
+	/***************************************/
+	/* Do x sweep.  Set up variables for    */
+	/* tridiagonal inversion along x     */
+
+
+#pragma omp parallel 
+	{
+	//int ID=omp_get_thread_num();
+	int ii,jj;
+	int  j_start=0,j_min,j_maxp1;
+	// nc1 = J , nc2 = K
+	//thread_ID[ID]+=1; //thread_ID[3] 
+	//if (ID==0) 
+	//  num_threads_used=omp_get_num_threads();
+
+	//for(j=0; j<nc2; j++) // subtract 1, the last boundary is in fact the same as the 0'th
+	//{	
+
+
+#pragma omp critical
+	{
+		for (jj=0; jj<N_incr ; jj++)
+			j_start++;
+
+		N_incr++;
+	}
+		if (j_start<n_extra_x_sweep){		
+			j_min = j_start*(npt_x_sweep+1);
+			j_maxp1 = j_min + npt_x_sweep + 1;
+		}
+		else{
+			j_min = j_start*npt_x_sweep + n_extra_x_sweep;
+			j_maxp1 = j_min + npt_x_sweep;
+		}	
+
+
+
+	Scalar *a_local,*b_local,*c_local,*r_local,*vx_local,*gam_local ;
+
+	a_local = new Scalar [nc1+1];
+	b_local = new Scalar [nc1+1];
+	c_local = new Scalar [nc1+1];	
+	r_local = new Scalar [nc1+1];	
+	vx_local = new Scalar [nc1+1];
+	gam_local = new Scalar [nc1+1];
+
+
+	for (jj=j_min; jj<j_maxp1; jj++){ 
+
+
+		for(ii=0; ii<ng1; ii++)
+		{ // calculate tridiagonal matrix coefficients for ADI method
+			// a_x2geom,b_x2geom,c_x2geom - coefficient depend on epsilon,dx,dy
+			a_local[ii] = -dth*a_x1geom[ii][jj]; // for equal spacing and not boundary: - a_ij = [eps(i-1,j-1)+eps(i,j-1)]/[2*dy^2]
+			b_local[ii] = 1 - dth*b_x1geom[ii][jj];
+			c_local[ii] = -dth*c_x1geom[ii][jj];
+
+			if(b_x2geom[ii][jj]!=0){  //non-dirichlet // b_x2geom[4][0]
+				// r is the RHS vector in the tridiagonal system solved
+				r_local[ii] = uadi[ii][jj] +dth*(-s[ii][jj] 
+				                                 +((jj>0)?a_x2geom[ii][jj]*uadi[ii][jj-1]:a_x2geom[ii][jj]*uadi[ii][nc2-1])
+				                                 +b_x2geom[ii][jj]*uadi[ii][jj] 
+				                                 +((jj!=nc2-1)?c_x2geom[ii][jj]*uadi[ii][jj+1]:c_x2geom[ii][jj]*uadi[ii][0]));
+			}
+			else{  // (*condition*) ? (*return_if_true*) :(*return if false*)
+				// on the condition periodic BC are assumed: u(-1,j)=u(I_max-1) , u(I_max,j)=u(0,j) 
+				r_local[ii] = uadi[ii][jj];  // metal sets the potential here.*
+			}
+		}
+
+
+
+
+		/* Solve tridiagonal system. */
+		tridag(a_local, b_local, c_local, r_local, vx_local, gam_local, ng1);
+		/* Copy solution into ustar. */
+		for(ii=0; ii<ng1; ii++) ustar[ii][jj] =vx_local[ii];  
+
+	} // end for loop ii
+
+
+	delete [] a_local;
+	delete [] b_local;
+	delete [] c_local;		
+	delete [] r_local;
+	delete [] vx_local;		
+	delete [] gam_local;
+
+}  // end parallel region
+
+//pvs fix for equipotential endpoint problem:
+for(i=0;i<=nc1;i++) ustar[i][nc2]=ustar[i][0]; // periodic potential
+
+
+
+
+
+/***************************************/
+/* Do y sweep.  Set up variables for    */
+/* tridiagonal inversion along y (j=const).      */
+
+N_incr=0;
+
+#pragma omp parallel 
+{
+
+
+	int ii,jj;
+	int  i_start=0;
+	int  i_min,i_maxp1;	
+
+
+#pragma omp critical
+	{
+	for (ii=0; ii<N_incr ; ii++)
+		i_start++;
+
+	N_incr++;
+	}
+
+if (i_start<n_extra_y_sweep){		
+	i_min = i_start*(npt_y_sweep+1);
+	i_maxp1 = i_min + npt_y_sweep + 1;
+}
+else{
+	i_min = i_start*npt_y_sweep + n_extra_y_sweep;
+	i_maxp1 = i_min + npt_y_sweep;
+}	
+
+Scalar *a_local,*b_local,*c_local,*r1_local,*r2_local,*vx1_local,*vx2_local,*gam_local ;
+
+a_local = new Scalar [nc2+1];
+b_local = new Scalar [nc2+1];
+c_local = new Scalar [nc2+1];	
+r1_local = new Scalar [nc2+1];	
+r2_local = new Scalar [nc2+1];	
+vx1_local = new Scalar [nc2+1];
+vx2_local = new Scalar [nc2+1];	  
+gam_local = new Scalar [nc2+1];
+
+
+
+for (ii=i_min; ii<i_maxp1; ii++){   
+
+	for(jj=0; jj<ng2; jj++) // make the reduced matrix Ac from the tridiagonal periodic algorithm
+	{
+		a_local[jj] = -dth*a_x2geom[ii][jj]; // 
+		b_local[jj] = 1 - dth*b_x2geom[ii][jj];
+		c_local[jj] = -dth*c_x2geom[ii][jj];
+
+		if(b_x2geom[ii][jj]!=0){  //non-dirichlet
+			// the RHS for finding V1 in the tridiagonal periodic algorithm
+			r2_local[jj] = ustar[ii][jj] +dth*(-s[ii][jj] 
+			                                   +((ii>0)?a_x1geom[ii][jj]*ustar[ii-1][jj]:0)
+			                                   +b_x1geom[ii][jj]*ustar[ii][jj] 
+			                                   +((ii<nc1)?c_x1geom[ii][jj]*ustar[ii+1][jj]:0));
+		}
+		else{
+			r2_local[jj] = ustar[ii][jj];  // metal sets the potential here.
+		}
+		// r_x1 is used here (besides it's job at the previous sweep) as a temp array the RHS for finding V1 in the tridiagonal periodic algorithm
+		r1_local[jj] = 0; 		  
+
+	}
+
+	r1_local[0]=-a_local[0];
+	r1_local[nc2-2]=-c_local[nc2-2];
+
+
+	/* Solve tridiagonal system for V1 in the tridiagonal periodic algorithm . */
+	tridag(a_local, b_local, c_local, r2_local, vx2_local, gam_local, ng2-2); // r_x1[0]
+	/* Solve tridiagonal system for V2 in the tridiagonal periodic algorithm . */
+	tridag(a_local, b_local, c_local, r1_local, vx1_local, gam_local, ng2-2);
+
+	uadi[ii][nc2-1]=(r2_local[nc2-1]-c_local[nc2-1]*vx2_local[0]-a_local[nc2-1]*vx2_local[nc2-2]) / (b_local[nc2-1]+c_local[nc2-1]*vx1_local[0]+a_local[nc2-1]*vx1_local[nc2-2]) ;
+
+	for(jj=0; jj<ng2-2; jj++) uadi[ii][jj] = vx2_local[jj]+vx1_local[jj]*uadi[ii][nc2-1]; // calc solution for i=0,...,Imax-2
+
+
+	uadi[ii][nc2] = uadi[ii][0]; // solution is periodic at y 
+
+	// uadi is phi_n_plus_1
+} // end for loop ii
+
+
+delete [] a_local;
+delete [] b_local;
+delete [] c_local;		
+delete [] r1_local;
+delete [] r2_local;
+delete [] vx1_local;			  
+delete [] vx2_local;		
+delete [] gam_local;
+
+} // end parallel region
+
+}
+
+
+
+
+
+
+adi omp dumb ver:
+
+
+void DadixyPer::adi_omp(Scalar **uadi, Scalar **s, Scalar del_t)
+{
+  register int i, j;
+  Scalar dth;
+
+  dth = .5*del_t;
+
+  int N_threads_local = N_threads;
+  int N_incr=0; //number of times to increment pointer at parallelization start 		
+
+	
+  /***************************************/
+  /* Do x sweep.  Set up variables for    */
+  /* tridiagonal inversion along x     */
+
+
+#pragma omp parallel 
+	{
+	  //int ID=omp_get_thread_num();
+	  int ii,jj;
+	  int  j_start=0;
+	// nc1 = J , nc2 = K
+	  //thread_ID[ID]+=1; //thread_ID[3] 
+	  //if (ID==0) 
+	  //  num_threads_used=omp_get_num_threads();
+
+	//for(j=0; j<nc2; j++) // subtract 1, the last boundary is in fact the same as the 0'th
+	//{	
+
+
+#pragma omp critical
+	{
+		for (jj=0; jj<N_incr ; jj++)
+			j_start++;
+
+		N_incr++;
+	}
+
+
+
+	Scalar *a_local,*b_local,*c_local,*r_local,*vx_local,*gam_local ;
+
+	a_local = new Scalar [nc1+1];
+	b_local = new Scalar [nc1+1];
+	c_local = new Scalar [nc1+1];	
+	r_local = new Scalar [nc1+1];	
+	vx_local = new Scalar [nc1+1];
+	gam_local = new Scalar [nc1+1];
+	
+
+	for (jj=j_start; jj<nc2; jj=jj+N_threads_local){ 
+
+		
+	for(ii=0; ii<ng1; ii++)
+	{ // calculate tridiagonal matrix coefficients for ADI method
+		// a_x2geom,b_x2geom,c_x2geom - coefficient depend on epsilon,dx,dy
+	    a_local[ii] = -dth*a_x1geom[ii][jj]; // for equal spacing and not boundary: - a_ij = [eps(i-1,j-1)+eps(i,j-1)]/[2*dy^2]
+		b_local[ii] = 1 - dth*b_x1geom[ii][jj];
+		c_local[ii] = -dth*c_x1geom[ii][jj];
+
+		if(b_x2geom[ii][jj]!=0){  //non-dirichlet // b_x2geom[4][0]
+			// r is the RHS vector in the tridiagonal system solved
+			r_local[ii] = uadi[ii][jj] +dth*(-s[ii][jj] 
+			                           +((jj>0)?a_x2geom[ii][jj]*uadi[ii][jj-1]:a_x2geom[ii][jj]*uadi[ii][nc2-1])
+			                           +b_x2geom[ii][jj]*uadi[ii][jj] 
+			                           +((jj!=nc2-1)?c_x2geom[ii][jj]*uadi[ii][jj+1]:c_x2geom[ii][jj]*uadi[ii][0]));
+		}
+		else{  // (*condition*) ? (*return_if_true*) :(*return if false*)
+			// on the condition periodic BC are assumed: u(-1,j)=u(I_max-1) , u(I_max,j)=u(0,j) 
+			r_local[ii] = uadi[ii][jj];  // metal sets the potential here.*
+		}
+	}
+	
+
+
+
+    /* Solve tridiagonal system. */
+    tridag(a_local, b_local, c_local, r_local, vx_local, gam_local, ng1);
+		/* Copy solution into ustar. */
+		for(ii=0; ii<ng1; ii++) ustar[ii][jj] =vx_local[ii];  
+
+	} // end for loop ii
+
+
+	delete [] a_local;
+	delete [] b_local;
+	delete [] c_local;		
+	delete [] r_local;
+	delete [] vx_local;		
+	delete [] gam_local;
+
+}  // end parallel region
+
+//pvs fix for equipotential endpoint problem:
+for(i=0;i<=nc1;i++) ustar[i][nc2]=ustar[i][0]; // periodic potential
+	
+
+
+
+
+  /***************************************/
+  /* Do y sweep.  Set up variables for    */
+  /* tridiagonal inversion along y (j=const).      */
+
+N_incr=0;
+
+#pragma omp parallel 
+{
+
+
+	  int ii,jj;
+	  int  i_start=0;
+
+
+#pragma omp critical
+	  {
+	  for (ii=0; ii<N_incr ; ii++)
+		  i_start++;
+
+	  N_incr++;
+  }
+
+
+
+	  Scalar *a_local,*b_local,*c_local,*r1_local,*r2_local,*vx1_local,*vx2_local,*gam_local ;
+
+	  a_local = new Scalar [nc2+1];
+	  b_local = new Scalar [nc2+1];
+	  c_local = new Scalar [nc2+1];	
+	  r1_local = new Scalar [nc2+1];	
+	  r2_local = new Scalar [nc2+1];	
+	  vx1_local = new Scalar [nc2+1];
+	  vx2_local = new Scalar [nc2+1];	  
+	  gam_local = new Scalar [nc2+1];
+
+
+
+	  for (ii=i_start; ii<nc1; ii=ii+N_threads_local){   
+
+		  for(jj=0; jj<ng2; jj++) // make the reduced matrix Ac from the tridiagonal periodic algorithm
+		  {
+			  a_local[jj] = -dth*a_x2geom[ii][jj]; // 
+			  b_local[jj] = 1 - dth*b_x2geom[ii][jj];
+			  c_local[jj] = -dth*c_x2geom[ii][jj];
+
+			  if(b_x2geom[ii][jj]!=0){  //non-dirichlet
+				  // the RHS for finding V1 in the tridiagonal periodic algorithm
+				  r2_local[jj] = ustar[ii][jj] +dth*(-s[ii][jj] 
+				                                     +((ii>0)?a_x1geom[ii][jj]*ustar[ii-1][jj]:0)
+				                                     +b_x1geom[ii][jj]*ustar[ii][jj] 
+				                                     +((ii<nc1)?c_x1geom[ii][jj]*ustar[ii+1][jj]:0));
+			  }
+			  else{
+				  r2_local[jj] = ustar[ii][jj];  // metal sets the potential here.
+			  }
+			  // r_x1 is used here (besides it's job at the previous sweep) as a temp array the RHS for finding V1 in the tridiagonal periodic algorithm
+			  r1_local[jj] = 0; 		  
+
+		  }
+
+		  r1_local[0]=-a_local[0];
+		  r1_local[nc2-2]=-c_local[nc2-2];
+
+
+		  /* Solve tridiagonal system for V1 in the tridiagonal periodic algorithm . */
+		  tridag(a_local, b_local, c_local, r2_local, vx2_local, gam_local, ng2-2); // r_x1[0]
+		  /* Solve tridiagonal system for V2 in the tridiagonal periodic algorithm . */
+		  tridag(a_local, b_local, c_local, r1_local, vx1_local, gam_local, ng2-2);
+
+		  uadi[ii][nc2-1]=(r2_local[nc2-1]-c_local[nc2-1]*vx2_local[0]-a_local[nc2-1]*vx2_local[nc2-2]) / (b_local[nc2-1]+c_local[nc2-1]*vx1_local[0]+a_local[nc2-1]*vx1_local[nc2-2]) ;
+
+		  for(jj=0; jj<ng2-2; jj++) uadi[ii][jj] = vx2_local[jj]+vx1_local[jj]*uadi[ii][nc2-1]; // calc solution for i=0,...,Imax-2
+
+
+		  uadi[ii][nc2] = uadi[ii][0]; // solution is periodic at y 
+
+		  // uadi is phi_n_plus_1
+	  } // end for loop ii
+
+
+	  delete [] a_local;
+	  delete [] b_local;
+	  delete [] c_local;		
+	  delete [] r1_local;
+	  delete [] r2_local;
+	  delete [] vx1_local;			  
+	  delete [] vx2_local;		
+	  delete [] gam_local;
+
+  } // end parallel region
+
+
+
+} // end adi_omp

@@ -1,0 +1,189 @@
+comments
+{
+XY simulation
+// activate on fields.cpp: the std library declaration, the write to file code 
+// deactivate the force between particles in sptlrgn: SpatialRegion::particleAdvance()   :  ENode_local[jj][kk] = 0;
+}
+
+Variables
+{
+  current = 0.01// [A]
+  ElectronEmitEV= 4 // [eV] (1/2 of kinetic energy which is assumed 8 eV)
+  Bmax=0.0 // The peak value of the magnetic field [T]
+  t0_B=1e-6 // ignition time for the B field (linear saturation profile)
+  dPhi=85 //  [V] The potential drop
+  np2c_gen=20
+  Lx=2e-3
+  //Ly=0.094
+  Ly=6.5e-3
+  eps0=8.85418781762e-12
+ //  PI=3.1415926535
+  alpha=10
+//----------------------------------------------
+  numCellsX = 100      // # of cells along horizontal axis . Igal took 40???
+  numCellsY =  400    // # of cells along vertical   axis
+
+  XminMKS=0
+  XMaxMKS = Lx   // length of horizontal axis [m]
+  dx=(XMaxMKS-XminMKS)/numCellsX // [m]
+  //start_pos = 0e-3
+  YminMKS = 12e-3 // from 6 deg angle requirement for R_avg=15[mm]
+  YMaxMKS = 18.5e-3  // 
+  dY = (YMaxMKS-YminMKS)/numCellsY // [m]
+  density_xenon=20e19 //[m^3] (x=0 value for the exponent drop)
+  XminGAS_1=5e-5  // minimum X location of neutrals (ad hoc)
+  XmaxGAS_1=4e-3-5e-5 // maximum X location of neutrals (ad hoc)
+  lambda=0 // [1/m]. exponential decay constant of n0(x)
+
+}
+Region 
+{
+ Grid
+ {
+	J = numCellsX
+	x1s = XminMKS
+	x1f = XMaxMKS
+	n1 = 1.2
+	K = numCellsY
+	x2s = YminMKS
+	x2f = YMaxMKS
+	n2 = 1.3
+	Geometry = 0 // 0 for cylindrical, 1 for cartesian
+	PeriodicFlagX1 = 0
+	PeriodicFlagX2 = 0 // periodic BC in y("teta")
+	Rule
+	{
+	 Limit
+	 n1 < 0.25
+	 Fatal -- n1 < 0.25 grid spacing too nonuniform to ensure accuracy
+	}
+	Rule
+	{
+	 Algebra
+	 J * K > 10000
+	 Warning -- J*K >= 10000 may mean memory problems!
+	}
+ }
+ Control
+ {
+	dt = 2E-11 // [s]
+	ElectrostaticFlag = 1 //field solver.  0=EM solver, 1 = electrostatic DADI. periodic BC works only with 1 or 4(Multigrid)
+	presidue = 1e-5 // Poisson solver convergence param
+
+	//positive Gradient Magnetic field (negative outside the engine), polyfit from Morozov article:
+	//B03analytic =Bmax*(-5.8690*pow(x1/XMaxMKS,4)+8.9248*pow(x1/XMaxMKS,3)-3.7834*pow(x1/XMaxMKS,2)+1.5227*pow(x1/XMaxMKS,1)+0.0113)//[T]
+//*(step(t0_B-t)*t/t0_B+step(t-t0_B))
+
+}
+
+Species
+{
+	name = Xenon+
+     m = 2.2112e-25 //[kg]
+     q = 1.6e-19 // [C]
+     collisionModel = 2 // ion collision
+     subcycle = 1 // Num oevaluatorf field advances per particle advance (>1)
+
+}
+
+
+
+
+
+
+
+Equipotential
+{
+        name = anode
+        C = dPhi
+	j1 = 0
+	k1 = 0
+	j2 = 0
+	k2 = numCellsY
+	normal = 1
+        IdiagFlag = 1          // Turn on energy and current diagnostics
+        reflection=0
+  }
+
+
+
+
+
+
+Equipotential
+{
+        name = exit plane and beam emitter
+        C = 0
+	j1 = numCellsX
+	k1 = 0
+	j2 = numCellsX
+	k2 = numCellsY
+	normal = -1
+        IdiagFlag = 1          // Turn on energy and current diagnostics
+        reflection=0
+  }
+
+ Equipotential
+ {
+        C = dPhi
+        name = down
+	j1 = 1
+	k1 = 0
+	j2 = numCellsX
+	k2 = 0
+        normal=1//
+        IdiagFlag = 0         // Turn on energy and current diagnostics
+        reflection=0
+	VanalyticF = (1 - (x1/Lx)*(x1/Lx) ) 
+
+ }
+
+
+ Equipotential
+ {
+        name = up
+        C = dPhi
+        er = 1
+        QuseFlag=0
+	j1 = 1
+	k1 = numCellsY
+	j2 = numCellsX
+	k2 = numCellsY
+        normal=-1//
+        IdiagFlag = 0         // Turn on energy and current diagnostics
+        reflection=0
+	VanalyticF = (1 - (x1/Lx)*(x1/Lx) ) 
+
+ }
+
+
+ Load
+	   {
+		  units=MKS
+                 temperature=0 //eV
+		  x1MinMKS = XMinMKS
+		  x1MaxMKS = XMaxMKS
+		  x2MinMKS = YminMKS
+		  x2MaxMKS = YMaxMKS
+		  speciesName = Xenon+   
+		 // density = 1.0e15
+		  //analyticF = 2*dPhi/pow(Lx,2)*eps0/alpha*(alpha-1+sin(2 * PI * (1 +(x2-YminMKS)/Ly) ) -PI/Ly * x1*(Lx-x1) * (1/x2*cos(2* PI* (1 + (x2-YminMKS)/Ly ))   - 2*PI/Ly * sin(2* PI* (1 + (x2-YminMKS)/Ly ))  )    )   / 1.6*pow(10,19) // neutral disribution
+
+//rho_zr(ip1,jp1)=2*phi0*eps0/alpha/Lz^2*( sin( pi* (1 + (r(ip1,jp1)-rmin)/Lr )) +  alpha-1  - pi/(2*Lr)* z(ip1,jp1) * (Lz-z(ip1,jp1)) * ( 1/r(ip1,jp1) * cos( pi* (1 + (r(ip1,jp1)-rmin)/Lr ))  - pi/Lr * sin( pi* (1 + (r(ip1,jp1)-rmin)/Lr ))  )    );
+        
+
+
+		  analyticF = 2*dPhi/pow(Lx,2)*eps0/alpha*(alpha-1+cos(2*PI*(1 +(x2-YminMKS)/Ly) ) + PI/Ly*x1*(Lx-x1)*(1/x2*sin(2*PI*(1+(x2-YminMKS)/Ly ))  + 2*PI/Ly*cos(2*PI*(1 + (x2-YminMKS)/Ly ))  )    )   / 1.6*pow(10,19) // neutral disribution
+
+//
+
+//		  analyticF = 2*dPhi/pow(Lx,2)*eps0/alpha*(alpha-1+cos(2*PI/Ly*x2)*(0.5*x1*(Lx-x1)*pow(2*PI/Ly,2))+1)/1.6*pow(10,19) // neutral disribution
+
+
+		  np2c = np2c_gen
+        	  //v2drift = 100000
+	 }
+
+
+}
+

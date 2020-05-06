@@ -1,0 +1,793 @@
+comments
+{
+Anode potential raised to 100 V. External current 10 mA. Discharge is self sustained? 
+}
+
+Variables
+{
+//diagnostics constants
+  save_on = 0
+
+// physical constants
+  xenon_atom_mass = 2.2112e-25 //kg
+  unit_charge = 1.602e-19 //C
+  electron_mass = 9.11e-31 //kg
+  fictitious_gas_charge = 1e-80 //C
+  delta_t = 1e-11 / 2 //s
+
+  //definition of electron emitter
+  current = 0.3//0.03 //0.05//0.01 // electron neutralizer cathode current, A 
+  ElectronEmitEV = 1 // 1/2 of emitted electron kinetic energy, eV
+  NP2C = 120000 // real particles per macro-particle (electron emitter)  
+
+  //definition of gas mass flow rate
+  mass_flow_rate = 4e-7//2.5e-8 //kg/s
+  gas_current = (fictitious_gas_charge/xenon_atom_mass)*mass_flow_rate // mass flow rate in A
+  gasTempEV    = 0.025 // 1/2 of emitted gas kinetic energy, eV
+  average_gas_speed = 1358*sqrt(2*gasTempEV) //m/s 
+  //zero NGD
+  density_xenon = 1e-50//m^-3 the original static background MCC (do not apply to the dynamic case)
+  NP2C_gas = 1e9 
+  numPtclsPerCell = 5e7 //controls the removal/addition threshold of target macro particles, 
+                               //should  be less than NP2C_gas and more than NP2C
+
+  //definition of wall emission (electron secondary emission due to ion impact)
+  WallgasTempeV = 0.05 // ev
+  threshold_eV = 1e-5 //eV Emission threshold: incident energy must exceed to emit
+  sec_num = 1 //Secondary emission coefficient
+  Eemit_sec = WallgasTempeV //Maximum energy of emitted secondaries (uniformly distributed)
+  Phi_bias = 150
+  eps_r_alumina = 9.8
+
+//----------------------------------------------
+//geometry of simulation region boundaries 
+
+  numCellsZ = 200      // # of cells along horizontal axis
+  numCellsR =  400    // # of cells along vertical   axis
+  start_pos = 0e-3
+  ZMaxMKS = 8e-3   // length of horizontal axis in meters
+  RminMKS = 9e-3
+  RMaxMKS = 22e-3  // 
+  dz=ZMaxMKS/numCellsZ //mm
+  dr=(RMaxMKS-RminMKS)/numCellsR //mm
+
+
+  Rmingas = 15e-3
+  Rmaxgas = 16e-3
+  Rminanode = 12.18e-3+2*dr //15e-3
+  Rmaxanode = 19e-3-2*dr //16e-3
+ 
+  c_pole_rw=6e-3 //m
+  c_pole_z=ZMaxMKS //m
+  
+  o_pole_rw=16e-3 //m
+  o_pole_z=ZMaxMKS  //m
+
+// define geometry of the static background gas for the original MCC
+  ZminGAS_1=5e-5
+  ZmaxGAS_1=4e-3-5e-5
+  ZminGAS_2=4e-3
+  ZmaxGAS_2=15e-3-5e-5
+}
+Region 
+{
+ Grid
+ {
+	J = numCellsZ
+	x1s = 0.0
+	x1f = ZMaxMKS
+	n1 = 1.0
+	K = numCellsR
+	x2s = RminMKS
+	x2f = RMaxMKS
+	n2 = 1.0
+	Geometry=0
+	PeriodicFlagX1 = 0
+	PeriodicFlagX2 = 0
+	Rule
+	{
+	 Limit
+	 n1 < 0.25
+	 Fatal -- n1 < 0.25 grid spacing too nonuniform to ensure accuracy
+	}
+	Rule
+	{
+	 Algebra
+	 J * K > 10000
+	 Warning -- J*K >= 10000 may mean memory problems!
+	}
+ }
+ Control
+ {
+	dt = delta_t
+	ElectrostaticFlag = 1
+	presidue = 1e-3
+        Bf = Bf_301x501_zeta1_I05_aligned_z0.txt //magnetic field file
+	NonRelativisticFlag = 1
+ }
+
+
+ Species
+ {
+     name = xenon
+     particleLimit = 1e8
+     m = xenon_atom_mass
+     q = fictitious_gas_charge
+     collisionModel = 0
+     subcycle = 500
+ }
+
+ Species
+ {
+     name = xenon+
+     particleLimit = 1e8
+     m = xenon_atom_mass
+     q = unit_charge
+     collisionModel = 2
+     subcycle = 50
+ }
+
+ Species
+ {
+     name = electron
+     particleLimit = 1e8
+     m = electron_mass
+     q = -unit_charge
+     collisionModel = 1
+     subcycle = 1
+ }
+
+ MCC // Monte-Carlo collision with background gas 
+ {
+  gas = Xe // //defining xenon as the neutral gas
+  //pressure = 1.248*10^-4//4*10^18[1/m^3] -> 1torr is 133.322 Pa
+  //temperature = 0.025//700 K in eV,  1eV equels 11604.5K
+  analyticF = density_xenon*(step(x1-ZminGAS_1)*step(ZMaxMKS-x1)) //background
+                                                     //gas density for the original MCC
+
+  //Species
+  eSpecies = electron //electron impact ionization species
+  iSpecies = xenon+ //ionization product
+  tSpecies = xenon //target background species
+  
+  ecxFactor=1.0//to bring to the inital highly ionizaed state - 10000
+      
+  discardDumpFileNGDDataFlag = 0 //store the NGD in each DUMP
+         // (used for managing the removal/creation on macro particles)
+
+  // turn on anomalous Bohm diffusion 
+  anomalousScatteringFlag   = 0 // off - classical only
+  inverseHallParameter = 64 // default 16
+  maxBField = 0.03 //T
+ 
+  //choose fully kinetic gas collisions (dynamic background gas "1")
+  dynamicMCCFlag = 1
+
+  // fix the number of macro particles to be created in each cell
+  MCC_numMacroParticlesPerCell = numPtclsPerCell
+ }
+
+ Dielectric
+ {
+        name = 1 downstream free space
+        er = 1
+        QuseFlag=0
+        A1 = start_pos
+        B1 = start_pos
+        A2 = RminMKS
+        B2 = Rminanode
+        normal=1//
+        IdiagFlag = 0         // Turn on energy and current diagnostics
+        reflection=0
+        Secondary
+        {
+          secondary=sec_num  //Secondary emission coefficient
+          threshold=threshold_eV   //eV Emission threshold: incident energy must exceed to emit
+          Eemit=Eemit_sec //Maximum energy of emitted secondaries (uniformly distributed)
+          secSpecies=xenon //
+          iSpecies=xenon     
+        }
+
+ }
+
+
+ Equipotential
+ {
+        name = 2 anode
+        C = 100 + Phi_bias
+        A1 = start_pos
+        B1 = start_pos
+        A2 = Rminanode
+        B2 = Rmaxanode
+	normal = 1
+        IdiagFlag = 1          // Turn on energy and current diagnostics
+        reflection=0
+        Secondary
+        {
+          secondary=sec_num  //Secondary emission coefficient
+          threshold=threshold_eV   //eV Emission threshold: incident energy must exceed to emit
+          Eemit=Eemit_sec //Maximum energy of emitted secondaries (uniformly distributed)
+          secSpecies=xenon //
+          iSpecies=xenon     
+        }
+  }
+
+
+ Dielectric
+ {
+        name = 3 downstream free space
+        er = 1
+        QuseFlag=0
+        A1 = start_pos
+        B1 = start_pos
+        A2 = Rmaxanode
+        B2 = RMaxMKS
+        normal=1//
+        IdiagFlag = 0         // Turn on energy and current diagnostics
+        reflection=0
+        Secondary
+        {
+          secondary=sec_num  //Secondary emission coefficient
+          threshold=threshold_eV   //eV Emission threshold: incident energy must exceed to emit
+          Eemit=Eemit_sec //Maximum energy of emitted secondaries (uniformly distributed)
+          secSpecies=xenon //
+          iSpecies=xenon     
+        }
+ }
+
+
+ Dielectric
+ {
+        name = r_max plume
+        A1 = 2.2e-3
+        B1 = ZMaxMKS
+        A2 = RMaxMKS
+        B2 = RMaxMKS
+        normal=-1//
+        IdiagFlag = 0         // Turn on energy and current diagnostics
+        reflection=0
+        er = 1.0
+ 	QuseFlag = 0
+
+ }
+
+ Equipotential
+ {
+  name= 5 outer pole 
+  C=Phi_bias
+  fill=1
+       Secondary
+        {
+          secondary=sec_num  //Secondary emission coefficient
+          threshold=threshold_eV   //eV Emission threshold: incident energy must exceed to emit
+          Eemit=Eemit_sec //Maximum energy of emitted secondaries (uniformly distributed)
+          secSpecies=xenon //
+          iSpecies=xenon     
+       }
+
+  Segment  
+   {
+    name = f_outer
+    A1 = 2e-3
+    B1 = start_pos
+    A2 = RMaxMKS
+    B2 = RMaxMKS
+    normal=-1
+  }
+
+  Segment  
+   {
+    name = f_oblique
+    A1 = 2e-3
+    B1 = start_pos
+    A2 = o_pole_rw
+    B2 = 19e-3
+    normal=-1//left
+  }
+  Segment  
+   {
+    A1 = 2e-3
+    B1 = 2e-3
+    A2 = o_pole_rw
+    B2 = RMaxMKS
+  }
+ }
+
+ 
+ Equipotential
+ {
+	name = 7 front Free space 
+        A1 = ZMaxMKS
+        B1 = ZMaxMKS
+        A2 = RminMKS
+        B2 = RMaxMKS
+	normal = -1//left
+        C= 0
+        IdiagFlag = 1          // Turn on energy and current diagnostics
+
+ }
+
+ 
+ Dielectric
+ {
+	name = r_min plume
+        er = 1.0
+ 	QuseFlag = 0
+        A1 = 2.2e-3
+        B1 = ZMaxMKS
+        A2 = RminMKS
+        B2 = RminMKS
+        normal = 1   //up
+        IdiagFlag = 0        // Turn on energy and current diagnostics     
+        reflection = 0
+ }
+
+ Equipotential
+ {
+  name= 10 central pole 
+  C=Phi_bias 
+  refMaxE = 0.1
+  fill=1
+       Secondary
+        {
+          secondary = sec_num  //Secondary emission coefficient
+          threshold = threshold_eV   //eV Emission threshold: incident energy must exceed to emit
+          Eemit = Eemit_sec //Maximum energy of emitted secondaries (uniformly distributed)
+          secSpecies = xenon //
+          iSpecies = xenon     
+       }
+
+  Segment  
+   {
+    name = f_central
+    A1 = start_pos
+    B1 = 2e-3
+    A2 = RminMKS
+    B2 = RminMKS
+    normal=1//up
+  }
+
+  Segment  
+   {
+    name = f_oblique
+    A1 = 2e-3
+    B1 = start_pos
+    A2 = RminMKS+c_pole_rw
+    B2 = 12.18e-3
+    normal=-1//left
+  }
+
+  Segment  
+   {
+      A1 = 2e-3
+      B1 = 2e-3
+      A2 = RminMKS
+      B2 = RminMKS+c_pole_rw
+   }
+ }
+
+
+ DielectricRegion
+ {
+        name = 11 dielectric wall down
+	fill = 1
+        er = eps_r_alumina // alumina
+        QuseFlag=1
+        A1 = 2e-3
+        B1 = 2.2e-3
+        A2 = RminMKS
+        B2 = RminMKS+c_pole_rw
+        normal=1//
+        IdiagFlag = 0         // Turn on energy and current diagnostics
+        reflection=0
+        Secondary
+        {
+          secondary=sec_num  //Secondary emission coefficient
+          threshold=threshold_eV   //eV Emission threshold: incident energy must exceed to emit
+          Eemit=Eemit_sec //Maximum energy of emitted secondaries (uniformly distributed)
+          secSpecies=xenon //
+          iSpecies=xenon     
+        }
+ }
+
+
+ DielectricRegion
+ {
+        name = 13 dielectric wall up
+	fill = 1
+        er =  eps_r_alumina // alumina
+        QuseFlag=1
+    	A1 = 2e-3
+    	B1 = 2.2e-3
+    	A2 = o_pole_rw
+    	B2 = RMaxMKS
+        normal=1//
+        IdiagFlag = 0         // Turn on energy and current diagnostics
+        reflection=0
+        Secondary
+        {
+          secondary=sec_num  //Secondary emission coefficient
+          threshold=threshold_eV   //eV Emission threshold: incident energy must exceed to emit
+          Eemit=Eemit_sec //Maximum energy of emitted secondaries (uniformly distributed)
+          secSpecies=xenon //
+          iSpecies=xenon     
+        }
+ }
+
+
+
+ BeamEmitter
+   {
+	name = 8 back gas emitter 
+        units=EV
+        A1 = start_pos
+        B1 = start_pos
+        A2 = Rmingas
+        B2 = Rmaxgas
+	speciesName = xenon
+	normal = 1//right
+	np2c = NP2C_gas
+	I = gas_current
+        thetadot = 0.0
+	temperature = gasTempEV
+        Ucutoff=10
+        Lcutoff=1e-5 
+        v1drift = 0
+        v2drift = 0
+        IdiagFlag = 0          // Turn on energy and current diagnostics
+  }
+
+ BeamEmitter
+ {
+	name = 8 front electron emitter 
+        units=EV
+        A1 = ZMaxMKS
+        B1 = ZMaxMKS
+        A2 = Rmingas
+        B2 = Rmaxgas
+	speciesName = electron
+	normal = -1//left
+	np2c = NP2C
+	I = current
+        thetadot = 0.0
+	temperature=ElectronEmitEV
+        Ucutoff=100
+        Lcutoff=1e-5 
+        v1drift = 0
+        v2drift = 0
+        IdiagFlag = 0          // Turn on energy and current diagnostics
+
+       // quasiNeutralFlag = 1 // Turn on quasi neutral emitter
+	//I_threshold = 0.03 // Ii_FS threshold. above value using quasineutral current
+
+ }
+
+
+//##########################
+// User defined diagnostics
+//##########################
+
+//######## Avergae Kinetic Energy ##########
+
+Diagnostic
+{
+	 VarName =  Ave_KE_gridprob0
+         x1_Label = time, s
+	 x2_Label = Te, eV
+	 title = Electron Avergae Kinetic Energy
+	 HistMax = 5000000
+
+	 save = save_on
+	 Comb = 0
+	 Ave = 0
+
+//important to select j1==j2 and k1==k2
+         j1 = numCellsZ/2
+	 k1 = numCellsR/2
+	 j2 = numCellsZ/2 
+	 k2 = numCellsR/2
+}
+
+Diagnostic
+{
+	 VarName =  Ave_KE_gridprob1
+         x1_Label = time, s
+	 x2_Label = Te, eV
+	 title = Xenon+ Avergae Kinetic Energy
+	 HistMax = 5000000
+
+	 save = save_on
+	 Comb = 0
+	 Ave = 0
+
+//important to select j1==j2 and k1==k2
+         j1 = numCellsZ/2
+	 k1 = numCellsR/2
+	 j2 = numCellsZ/2 
+	 k2 = numCellsR/2
+}
+
+Diagnostic
+{
+	 VarName =  Ave_KE_gridprob2
+         x1_Label = time, s
+	 x2_Label = Te, eV
+	 title = Xenon Avergae Kinetic Energy
+	 HistMax = 5000000
+
+	 save = save_on
+	 Comb = 0
+	 Ave = 0
+
+//important to select j1==j2 and k1==k2
+         j1 = numCellsZ/2
+	 k1 = numCellsR/2
+	 j2 = numCellsZ/2 
+	 k2 = numCellsR/2
+}
+
+
+
+//######## Average Number Density ##########
+
+Diagnostic
+{
+	 VarName =  total_density_gridprob0
+         x1_Label = time, s
+	 x2_Label = ne, m^-3
+	 title = Electron Average Number Density
+	 HistMax = 5000000
+
+	 save = save_on
+	 Comb = 0
+	 Ave = 0
+
+//important to select j1==j2 and k1==k2
+         j1 = numCellsZ/2
+	 k1 = numCellsR/2
+	 j2 = numCellsZ/2 
+	 k2 = numCellsR/2
+}
+
+Diagnostic
+{
+	 VarName =  total_density_gridprob1
+         x1_Label = time, s
+	 x2_Label = n_xe+, m^-3
+	 title = Xenon+ Average Number Density
+	 HistMax = 5000000
+
+	 save = save_on
+	 Comb = 0
+	 Ave = 0
+
+//important to select j1==j2 and k1==k2
+         j1 = numCellsZ/2
+	 k1 = numCellsR/2
+	 j2 = numCellsZ/2 
+	 k2 = numCellsR/2
+}
+
+Diagnostic
+{
+	 VarName =  total_density_gridprob2
+         x1_Label = time, s
+	 x2_Label = n_xe+, m^-3
+	 title = Xenon Average Number Density
+	 HistMax = 5000000
+
+	 save = save_on
+	 Comb = 0
+	 Ave = 0
+
+//important to select j1==j2 and k1==k2
+         j1 = numCellsZ/2
+	 k1 = numCellsR/2
+	 j2 = numCellsZ/2 
+	 k2 = numCellsR/2
+}
+
+
+
+//######## Macroparticle Number  ##########
+
+Diagnostic
+{
+	 VarName =  number_gridprob0
+         x1_Label = time, s
+	 x2_Label = number
+	 title = Electron Macroparticle Number 
+	 HistMax = 5000000
+
+	 save = save_on
+	 Comb = 0
+	 Ave = 0
+
+//important to select j1==j2 and k1==k2
+         j1 = numCellsZ/2
+	 k1 = numCellsR/2
+	 j2 = numCellsZ/2 
+	 k2 = numCellsR/2
+}
+
+Diagnostic
+{
+	 VarName =  number_gridprob1
+         x1_Label = time, s
+	 x2_Label = number
+	 title = Xenon+ Macroparticle Number 
+	 HistMax = 5000000
+
+	 save = save_on
+	 Comb = 0
+	 Ave = 0
+
+//important to select j1==j2 and k1==k2
+         j1 = numCellsZ/2
+	 k1 = numCellsR/2
+	 j2 = numCellsZ/2 
+	 k2 = numCellsR/2
+}
+
+Diagnostic
+{
+	 VarName =  number_gridprob2
+         x1_Label = time, s
+	 x2_Label = number
+	 title = Xenon Macroparticle Number 
+	 HistMax = 5000000
+
+	 save = save_on
+	 Comb = 0
+	 Ave = 0
+
+//important to select j1==j2 and k1==k2
+         j1 = numCellsZ/2
+	 k1 = numCellsR/2
+	 j2 = numCellsZ/2 
+	 k2 = numCellsR/2
+}
+
+
+
+
+//######## Currents collected on FS boundary ##########
+
+Diagnostic
+{
+	 VarName =  Ir_gridprob8
+         x1_Label = time, s
+	 x2_Label = current, mA
+	 title = Ie,out FS 
+	 HistMax = 5000000
+
+	 save = save_on
+	 Comb = 0
+	 Ave = 0
+
+//important to select j1==j2 and k1==k2
+         j1 = numCellsZ/2
+	 k1 = numCellsR/2
+	 j2 = numCellsZ/2 
+	 k2 = numCellsR/2
+}
+
+Diagnostic
+{
+	 VarName =  Ir_gridprob9
+         x1_Label = time, s
+	 x2_Label = current, mA
+	 title = Ixe+,out FS 
+	 HistMax = 5000000
+
+	 save = save_on
+	 Comb = 0
+	 Ave = 0
+
+//important to select j1==j2 and k1==k2
+         j1 = numCellsZ/2
+	 k1 = numCellsR/2
+	 j2 = numCellsZ/2 
+	 k2 = numCellsR/2
+}
+
+Diagnostic
+{
+	 VarName =  Ir_gridprob10
+         x1_Label = time, s
+	 x2_Label = current, mA
+	 title = Ixe,out FS 
+	 HistMax = 5000000
+
+	 save = save_on
+	 Comb = 0
+	 Ave = 0
+
+//important to select j1==j2 and k1==k2
+         j1 = numCellsZ/2
+	 k1 = numCellsR/2
+	 j2 = numCellsZ/2 
+	 k2 = numCellsR/2
+}
+
+Diagnostic
+{
+	 VarName =  Ir_gridprob11
+         x1_Label = time, s
+	 x2_Label = current, mA
+	 title = Icu+,out FS 
+	 HistMax = 5000000
+
+	 save = save_on
+	 Comb = 0
+	 Ave = 0
+
+//important to select j1==j2 and k1==k2
+         j1 = numCellsZ/2
+	 k1 = numCellsR/2
+	 j2 = numCellsZ/2 
+	 k2 = numCellsR/2
+}
+
+//######## Currents collected on Anode boundary ##########
+
+Diagnostic
+{
+	 VarName =  Ir_gridprob20
+         x1_Label = time, s
+	 x2_Label = current, mA
+	 title = Ie,in Anode  
+	 HistMax = 5000000
+
+	 save = save_on
+	 Comb = 0
+	 Ave = 0
+
+//important to select j1==j2 and k1==k2
+         j1 = numCellsZ/2
+	 k1 = numCellsR/2
+	 j2 = numCellsZ/2 
+	 k2 = numCellsR/2
+}
+
+Diagnostic
+{
+	 VarName =  Ir_gridprob21
+         x1_Label = time, s
+	 x2_Label = current, mA
+	 title = Ixe+,in Anode  
+	 HistMax = 5000000
+
+	 save = save_on
+	 Comb = 0
+	 Ave = 0
+
+//important to select j1==j2 and k1==k2
+         j1 = numCellsZ/2
+	 k1 = numCellsR/2
+	 j2 = numCellsZ/2 
+	 k2 = numCellsR/2
+}
+
+Diagnostic
+{
+	 VarName =  Ir_gridprob23
+         x1_Label = time, s
+	 x2_Label = current, mA
+	 title = Icu+,in Anode  
+	 HistMax = 5000000
+
+	 save = save_on
+	 Comb = 0
+	 Ave = 0
+
+//important to select j1==j2 and k1==k2
+         j1 = numCellsZ/2
+	 k1 = numCellsR/2
+	 j2 = numCellsZ/2 
+	 k2 = numCellsR/2
+}
+
+}
+
+
