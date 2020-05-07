@@ -919,6 +919,12 @@ int NGD::restoreH5(dumpHDF5 &restoreObj,string whichNGD)
 
   }
 
+	  
+	  //FIX by Matteo. Allows loading h5 files with different grids. NGD will be replaced by kinetic gas in future
+  if (Jl>J)
+		  Jl=J;
+  if (Kl>K)
+		  Kl=K;
 
 
  // ofstream out;

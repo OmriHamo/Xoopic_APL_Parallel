@@ -1057,8 +1057,8 @@ int SpatialRegion::dumpH5(dumpHDF5 &dumpObj)
 // dump time as attribute
   dims = 1;
   attrdataspaceId = H5Screate(H5S_SCALAR);
-  attributeId = H5Acreate(groupId, "simulationTime",scalarType, attrdataspaceId, H5P_DEFAULT);
-  status = H5Awrite(attributeId, scalarType, &t);
+  attributeId = H5Acreate(groupId, "simulationTime",H5T_NATIVE_DOUBLE, attrdataspaceId, H5P_DEFAULT); //time made longer by Matteo
+  status = H5Awrite(attributeId, H5T_NATIVE_DOUBLE, &t);
   status = H5Aclose(attributeId);
   status = H5Sclose(attrdataspaceId);
   
