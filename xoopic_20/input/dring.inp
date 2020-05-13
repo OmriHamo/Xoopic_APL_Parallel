@@ -54,6 +54,8 @@ BeamEmitter
 }
 Conductor
 {
+	name = conductor1
+	IdiagFlag = 1
 	er = 1
 	 Segment
 	 {
@@ -62,25 +64,30 @@ Conductor
 		  j2 = 0
 		  k2 = Kmax
 		  normal = 1
+		
 	 }
 }
 Conductor
 {
+	name = conductor2
 	er = 1
 	j1 = 0
 	k1 = Kmax
 	j2 = Jmax
 	k2 = Kmax
 	normal = -1
+	IdiagFlag = 1
 }
 Conductor
 {
+	name = conductor3
 	er = 1
 	j1 = Jmax
 	k1 = Kmax
 	j2 = Jmax
 	k2 = 0
 	normal = -1
+	IdiagFlag = 1
 }
 DielectricRegion
 {
@@ -90,26 +97,28 @@ DielectricRegion
 	j2 = 10*Jmax/13
 	k2 = 10*Kmax/13
 	QuseFlag = 1
+	IdiagFlag = 1
 }
 Diagnostic
 {
 	 HistMax = 512
 	 Comb = 2
-	 Ave = 0
+	 Ave = 1
 	 j1 = 3*Jmax/13
 	 k1 = 3*Kmax/13
 	 j2 = 3*Jmax/13
-	 k2 = 10*Kmax/13
+	 k2 = 3*Kmax/13
 	 VarName = phi
 	 title = phi at edge of ring
 	 x1_Label = radius
 	 x2_Label = time
+	 save =1
 }
 Diagnostic
 {
 	 HistMax = 512
 	 Comb = 2
-	 Ave = 0
+	 Ave = 1
 	 j1 = 3*Jmax/13
 	 k1 = 0
 	 j2 = 3*Jmax/13
@@ -118,7 +127,12 @@ Diagnostic
 	 title = Charge at edge of ring
 	 x1_Label = radius
 	 x2_Label = time
-}		 	 
+	 save =1
+}	
+
+
+
+	 	 
 CylindricalAxis
 {
 	j1 = 0

@@ -64,8 +64,12 @@ void Scalar_History::comb_arrays(void) {
 	
   // discard elements by taking every "comb"th element
 
-  for(i=0,j=0;i<hist_hi;i++,j+=comb) {
-    data[i]=data[j];
+  for(i=0,j=0;i<hist_hi;i++,j+=comb) { //by Matteo, averaging instead of combing, solves subcycling aliasing problem
+	  Scalar data_av=0.0;
+	for(int c=0; c<comb; c++)
+		data_av+=data[j+c];
+	data_av/=comb;
+    data[i]=data_av;
     time_array[i]=time_array[j];
   }
   step*=comb;  // increase the step.
@@ -341,11 +345,15 @@ void Scalar_Ave_History::comb_arrays()
 	
 	// discard elements by taking every "comb"th element
 
-	for(i=0,j=0;i<hist_hi;i++,j+=comb) {
-		data[i]=data[j];
-		time_array[i]=time_array[j];
-	}
-	step*=comb;  // increase the step.
+	  for(i=0,j=0;i<hist_hi;i++,j+=comb) { //by Matteo, averaging instead of combing, solves subcycling aliasing problem
+		  Scalar data_av=0.0;
+		for(int c=0; c<comb; c++)
+			data_av+=data[j+c];
+		data_av/=comb;
+	    data[i]=data_av;
+	    time_array[i]=time_array[j];
+	  }
+	  step*=comb;  // increase the step.
 }
 void Scalar_Ave_History::dump(FILE *DMPFile){
 	History::dump(DMPFile);
@@ -462,9 +470,19 @@ void Vec_Pointers_History::comb_arrays(void) {
 	
 	// discard elements by taking every "comb"th element
 
+	Scalar temp=0;
+
 	for(i=0,j=0;i<hist_hi;i++,j+=comb) {
 		for(int k=0;k<vector_size;k++)
-			data[k][i]=data[k][j];
+			{
+				for(int m=0;m<comb;m++)
+					{
+						temp += data[k][j+m];
+						data[k][j+m] = 0.0;
+					}
+				data[k][i] =temp/comb;
+				temp =0;
+			}
 		time_array[i]=time_array[j];
 	}
 	step*=comb;  // increase the step.
@@ -860,14 +878,21 @@ void Vector_History::comb_arrays(void) {
 
 	n_comb++;
 	
-	// discard elements by taking every "comb"th element
+	  Scalar* data_av=new Scalar[vector_size];
 
-	for(i=0,j=0;i<hist_hi;i++,j+=comb) {
+	for(i=0,j=0;i<hist_hi;i++,j+=comb) {//by Matteo, averaging instead of combing, solves subcycling aliasing problem
 		for(int k=0;k<vector_size;k++)
-			data[k][i]=data[k][j];
+			data_av[k]=0;
+		for(int c=0; c<comb; c++)
+			for(int k=0;k<vector_size;k++)
+				data_av[k]+=data[k][j+c];
+		for(int k=0;k<vector_size;k++)
+			data[k][i]=data_av[k]/comb;
 		time_array[i]=time_array[j];
 	}
 	step*=comb;  // increase the step.
+
+	delete[] data_av;
 }
 void Vector_History::dump(FILE *DMPFile){
 	History::dump(DMPFile);
