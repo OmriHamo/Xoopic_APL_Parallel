@@ -517,7 +517,7 @@ Vector2 BeamEmitter::computeLocationQuasiNeutral()
 void BeamEmitter::compute_nPer_dt(Scalar dt)//igal add
 {
 
-
+/*
 	//// Szabo first method - current balance
 	
 	 // Szabo 2nd method (good):
@@ -559,10 +559,10 @@ Scalar Itot=0;
 
 
 
-
+*/
 
 	
-	/*
+
 	 // Szabo 2nd method (good):
 	Scalar ion_FS_current = fabs(theSpace->getIr_spc(theSpace->get_cathode_index(),theSpace->get_i_index())) ; //theSpace->getIr_spc(theSpace->get_cathode_index(),theSpace->get_i_index()); // calculate from diag@@@@  theSpace.Ir_spc[theSpace.anode_index][theSpace.n_index]
 	Scalar ion_Anode_current=fabs(theSpace->getIr_spc(theSpace->get_anode_index(),theSpace->get_i_index())) ; //theSpace->getIr_spc(theSpace->get_cathode_index(),theSpace->get_i_index()); // calculate from diag@@@@  theSpace.Ir_spc[theSpace.anode_index][theSpace.n_index]
@@ -605,6 +605,6 @@ Scalar Itot=0;
 		Ie_beam = nPer_dt * fabs(get_q() ) / dt;
 
 
-*/
+
 
 }
