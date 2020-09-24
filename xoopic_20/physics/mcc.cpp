@@ -1807,7 +1807,8 @@ Scalar XeMCC::sigmaElastic(Scalar energy)
   //IgalK change
   //if (energy <= 1) return 0;
   //igal option two
-  if (energy <= 0.1592) return 1.699e-19;
+/*
+  if (energy <= 0.1592) return   1.699e-19;
 	else if (energy <2.8)
 	  {
 	   Scalar sqrtenergy=sqrt(energy);
@@ -1816,7 +1817,7 @@ Scalar XeMCC::sigmaElastic(Scalar energy)
 	             	 -0.42726069455393*sqrtenergy+0.11430271021684);
       }
   //end option two
-  else if (energy < 3.46737) return -2.56426e-20 + energy*(3.05131e-20 + 1.01401e-20*energy);
+  else if (energy < 3.46737) return  -2.56426e-20 + energy*(3.05131e-20 + 1.01401e-20*energy);
   else if (energy < 4.2658) return -7.02412e-19 + energy*(4.15012e-19 - 4.46826e-20*energy);
   else if (energy < 5.62341) return -3.14744e-19 + energy*(2.19764e-19 - 2.027176e-20*energy);
   else if (energy < 12.0226) return 2.23972e-19 + energy*(2.61272e-20 - 2.81077e-21*energy);
@@ -1826,6 +1827,25 @@ Scalar XeMCC::sigmaElastic(Scalar energy)
   else if (energy < 537.032) return 2.59891e-20 + energy*(-5.72321e-23 + 4.79915e-26*energy);
   else if (energy < 1000) return 1.46698e-20 + energy*(-1.28135e-23 + 3.98769e-27*energy);
   else return 0;
+
+*/
+
+// Updated Cross sections (Omri Hamo) according to https://doi.org/10.1098/rspa.2015.0727
+Scalar en2 = energy*energy;
+  if (energy <= 0.213) return   1e-16 * ( 0.007016770539432 -0.063961396996821*energy + 0.177587641916657*en2 );
+	else if (energy <2.0)
+	  {
+
+	   return 1e-18* (0.094874274175627  -0.167876803241518*energy +0.093615244063678*en2 );
+      }
+  //end option two
+  else if (energy < 4.5) return  1e-18* ( -0.262932107122276+ 0.205153296494451*energy -0.009060356576570*en2 );
+  else if (energy < 15.0) return 1e-18 * (0.614424483228206  -0.020484717276389*energy + 0.000134804420531*en2 );
+  else if (energy < 40.0) return 1e-18*(0.369407677532180  + 0.001217858354549*energy + -0.000192191163589*en2);
+  else if (energy < 74.05) return 1e-18 * (0.520835746957240 -0.014433002700136*energy + 0.000111866915311*en2 );
+  else if (energy < 1450) return 1e-19 * (0.596841152232851 -0.000429776551688*energy +  0.000000134502029*en2);
+  else return 0;
+
 }
 
 Scalar XeMCC::sigmaExc(Scalar energy) // summed excitations
