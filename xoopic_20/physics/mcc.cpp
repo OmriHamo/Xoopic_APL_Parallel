@@ -2896,7 +2896,7 @@ throw(Oops){
   if (pgList.isEmpty()) return;
   Species* species = pgList.headData()->get_species();
   CollisionModel collisionModel = species->get_collisionModel();
-  if (collisionModel != electron ) return; //select only electron type pg	
+//  if (collisionModel != electron ) return; //select only electron type pg
   if (collProbB < 1e-20) return;
 
   int j,k,indexP;
@@ -2954,10 +2954,12 @@ throw(Oops){
      * calculate the angle between the magnetic field vector and the
 	 * particle's velocity vector.
      */
+
+	 /* start Igal vers
 	 Scalar sin_phi=sqrt(1-sqr(u.dotprod(Bcc)/(Bccmag*v)));
-     /**
-     * calculate the anomalous Bohm frequency. 
-     */
+
+     // calculate the anomalous Bohm frequency.
+
 	 Scalar Nu_ano = 0;
      Nu_ano = PROTON_CHARGE*Bccmag*sin_phi/(inverseHallParameter1*ELECTRON_MASS);
 
@@ -2975,7 +2977,50 @@ throw(Oops){
     }// end of "while(nCollisions--)" construct
     return;
 	//   std::cerr << "j = " <<  j << " " << "k = " << k << std::endl;
+
+
+     //end Igal Ver */
+
+
+	 /* Omri Ver - according to https://iopscience.iop.org/article/10.1088/0022-3727/43/29/292001 */
+
+
+	 Scalar Nu_ano = 0;
+	 Nu_ano = PROTON_CHARGE*Bccmag/(inverseHallParameter1*ELECTRON_MASS);
+	 Scalar	random = frand();
+	 random *= Nu_ano_max;
+	 if (random < Nu_ano) {
+
+		 //u /= (v+1E-30); // normalize to get the velocity unit vector
+		 //scatterVelocity(v, u); //get scattered velocity
+
+		 Scalar cos_chi = u.dotprod(Bcc)/(Bccmag*v);
+		 Scalar Vz_pen =u.e1() - v*cos_chi*Bcc.e1()/Bccmag;
+		 Scalar rnd_ang =TWOPI * frand();
+		 Scalar u_theta = u.e2();
+
+		 //u.set_e1(the same - unchanged);
+		 u.set_e2( u_theta * cos(rnd_ang) - Vz_pen*sin(rnd_ang));
+		 u.set_e3( v*cos_chi*Bcc.e1()/Bccmag + u_theta * sin(rnd_ang) + Vz_pen*cos(rnd_ang) );
+
+		 pg->set_v(u,indexP); //update the selected macroparticle with the
+		 //scattered velocity
+
+
+	 }
+  }// end of "while(nCollisions--)" construct
+  return;
+
+
+
+	  /* End Omri ver */
+
+
 }
+
+
+
+
 
 
 

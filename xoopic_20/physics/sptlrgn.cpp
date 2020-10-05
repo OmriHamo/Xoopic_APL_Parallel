@@ -764,7 +764,7 @@ printf (" execution time is %f with %d threads \n",t1,N_threads); 	*/
 		  * scattering. 
           * IgalK, March 2015. 
           */
-          if (mcaes) {
+          if (mcaes && i==e_index) {
              try{
                  mcaes->anomalousScattering(*particleGroupList[i]);
              }
